@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/database/database_helper.dart';
 import 'package:flutter_application_1/models/city_model.dart';
 import 'package:flutter_application_1/models/weather_model.dart';
 import 'package:flutter_application_1/services/weather_service.dart';
@@ -28,6 +29,7 @@ class WeatherPage extends StatefulWidget {
 class _WeatherPageState extends State<WeatherPage> {
   WeatherModel? _weather;
   bool _isLoading = true;
+  bool _isOffline = false;
   String? _error;
 
   String get _title => widget.city?.nome ?? widget.locationName ?? '';
@@ -42,24 +44,46 @@ class _WeatherPageState extends State<WeatherPage> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _isOffline = false;
     });
     try {
-      final WeatherModel weather;
+      final WeatherResult result;
       if (widget.lat != null && widget.lon != null) {
-        weather = await WeatherService.fetchWeatherByCoords(widget.lat!, widget.lon!);
+        result = await WeatherService.fetchWeatherByCoords(widget.lat!, widget.lon!);
       } else {
-        weather = await WeatherService.fetchWeather(widget.city?.nome ?? '');
+        result = await WeatherService.fetchWeather(widget.city?.nome ?? '');
       }
+
+      await DatabaseHelper.saveWeather(result.lat, result.lon, result.weather);
+
       setState(() {
-        _weather = weather;
+        _weather = result.weather;
         _isLoading = false;
       });
-    } catch (e) {
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
+    } catch (_) {
+      final cached = await _loadFromCache();
+      if (cached != null) {
+        setState(() {
+          _weather = cached;
+          _isOffline = true;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Sem conexão e sem dados em cache para esta localização.';
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  Future<WeatherModel?> _loadFromCache() async {
+    final lat = widget.lat;
+    final lon = widget.lon;
+    if (lat != null && lon != null) {
+      return DatabaseHelper.getCachedWeather(lat, lon);
+    }
+    return null;
   }
 
   @override
@@ -137,6 +161,23 @@ class _WeatherPageState extends State<WeatherPage> {
           padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
           child: Column(
             children: [
+              if (_isOffline)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.wifi_off, size: 16, color: Colors.white),
+                      SizedBox(width: 6),
+                      Text('Dados em cache — sem conexão', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    ],
+                  ),
+                ),
               Text(
                 weather.icon,
                 style: const TextStyle(fontSize: 96),
@@ -165,18 +206,38 @@ class _WeatherPageState extends State<WeatherPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  child: Column(
                     children: [
-                      _InfoTile(
-                        icon: Icons.air,
-                        label: 'Vento',
-                        value: '${weather.windSpeed.toStringAsFixed(1)} km/h',
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _InfoTile(
+                            icon: Icons.air,
+                            label: 'Vento',
+                            value: '${weather.windSpeed.toStringAsFixed(1)} km/h',
+                          ),
+                          _InfoTile(
+                            icon: Icons.water_drop,
+                            label: 'Umidade',
+                            value: '${weather.humidity}%',
+                          ),
+                        ],
                       ),
-                      _InfoTile(
-                        icon: Icons.water_drop,
-                        label: 'Umidade',
-                        value: '${weather.humidity}%',
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _InfoTile(
+                            icon: Icons.arrow_downward,
+                            label: 'Mínima',
+                            value: '${weather.tempMin.toStringAsFixed(1)}°C',
+                          ),
+                          _InfoTile(
+                            icon: Icons.arrow_upward,
+                            label: 'Máxima',
+                            value: '${weather.tempMax.toStringAsFixed(1)}°C',
+                          ),
+                        ],
                       ),
                     ],
                   ),

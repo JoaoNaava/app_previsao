@@ -2,8 +2,16 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_application_1/models/weather_model.dart';
 
+class WeatherResult {
+  final WeatherModel weather;
+  final double lat;
+  final double lon;
+
+  const WeatherResult({required this.weather, required this.lat, required this.lon});
+}
+
 class WeatherService {
-  static Future<WeatherModel> fetchWeather(String cityName) async {
+  static Future<WeatherResult> fetchWeather(String cityName) async {
     final geoUrl = Uri.parse(
       'https://geocoding-api.open-meteo.com/v1/search?name=${Uri.encodeComponent(cityName)}&count=1&language=pt&format=json',
     );
@@ -19,14 +27,17 @@ class WeatherService {
       throw Exception('Cidade não encontrada no serviço de clima');
     }
 
-    return fetchWeatherByCoords(results[0]['latitude'], results[0]['longitude']);
+    final lat = (results[0]['latitude'] as num).toDouble();
+    final lon = (results[0]['longitude'] as num).toDouble();
+    return fetchWeatherByCoords(lat, lon);
   }
 
-  static Future<WeatherModel> fetchWeatherByCoords(double lat, double lon) async {
+  static Future<WeatherResult> fetchWeatherByCoords(double lat, double lon) async {
     final weatherUrl = Uri.parse(
       'https://api.open-meteo.com/v1/forecast'
       '?latitude=$lat&longitude=$lon'
-      '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m',
+      '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
+      '&daily=temperature_2m_max,temperature_2m_min&timezone=auto',
     );
 
     final weatherResponse = await http.get(weatherUrl);
@@ -34,6 +45,7 @@ class WeatherService {
       throw Exception('Erro ao buscar clima');
     }
 
-    return WeatherModel.fromJson(jsonDecode(weatherResponse.body));
+    final weather = WeatherModel.fromJson(jsonDecode(weatherResponse.body));
+    return WeatherResult(weather: weather, lat: lat, lon: lon);
   }
 }
